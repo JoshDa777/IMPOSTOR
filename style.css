@@ -1,58 +1,97 @@
+/* Paleta de Colores: 
+   Fondo Oscuro: #1a1a2e (Misterio)
+   Azul Civil/Primario: #4a69bd
+   Rojo Impostor/Advertencia: #e74c3c
+   Texto: #f0f0f0
+*/
+
 body {
-    font-family: sans-serif;
-    background-color: #f4f4f9;
-    color: #333;
+    font-family: 'Arial', sans-serif;
+    background-color: #1a1a2e; /* Fondo oscuro */
+    color: #f0f0f0; /* Texto claro */
     margin: 0;
     padding: 0;
     text-align: center;
+    min-height: 100vh;
 }
 
 header {
-    background-color: #2c3e50;
-    color: white;
+    background-color: #0f1828; /* Barra superior más oscura */
     padding: 15px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
 header h1 {
     margin: 0;
-    font-size: 2em;
+    font-size: 2.5em;
+    font-weight: 700;
+    color: #e74c3c; /* Título en rojo */
     flex-grow: 1;
     text-align: center;
 }
 
-#auth-screen, #setup-screen, #game-lobby {
-    max-width: 500px;
+/* Contenedores Principales */
+#auth-screen, #setup-screen, #game-lobby, #lobby-actions {
+    max-width: 600px;
     margin: 50px auto;
-    padding: 30px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 40px;
+    background: #232946; /* Contenedores semi-oscuros */
+    border-radius: 10px;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.5);
+    border: 1px solid #4a69bd; /* Borde azul */
 }
 
+/* Botones */
 button {
-    background-color: #3498db;
-    color: white;
     border: none;
-    padding: 10px 20px;
-    margin: 5px;
-    border-radius: 5px;
+    padding: 12px 25px;
+    margin: 10px;
+    border-radius: 50px; /* Bordes redondos */
     cursor: pointer;
-    font-size: 1em;
-    transition: background-color 0.3s;
+    font-size: 1.1em;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
-button:hover:not(:disabled) {
-    background-color: #2980b9;
+/* Botón Jugar (Principal) */
+#btn-jugar {
+    background-color: #4a69bd; /* Azul Primario */
+    color: #f0f0f0;
+    box-shadow: 0 4px #2c438c;
+}
+#btn-jugar:hover:not(:disabled) {
+    background-color: #5d83d1;
+    transform: translateY(-2px);
+    box-shadow: 0 6px #2c438c;
 }
 
-button:disabled {
-    background-color: #95a5a6;
-    cursor: not-allowed;
+/* Botón de Perfil/Configuración (Secundario) */
+#btn-perfil, #btn-amigos, #btn-config {
+    background-color: #5c6c8c;
+    color: #f0f0f0;
+    padding: 10px 15px;
+    font-size: 0.9em;
+    border-radius: 8px;
 }
 
+/* Botón de Google */
+#btn-google-signin {
+    background-color: #e74c3c; /* Rojo de Impostor */
+    color: white;
+    box-shadow: 0 4px #b93c2d;
+}
+#btn-google-signin:hover:not(:disabled) {
+    background-color: #f36c5c;
+    transform: translateY(-2px);
+    box-shadow: 0 6px #b93c2d;
+}
+
+/* Campos de Formulario */
 .form-group {
     margin-bottom: 20px;
     text-align: left;
@@ -62,28 +101,33 @@ button:disabled {
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
+    color: #e0e0e0;
 }
 
 .form-group input {
     width: 95%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 12px;
+    border: none;
+    background-color: #313a5a; /* Fondo de input oscuro */
+    color: #f0f0f0;
+    border-radius: 5px;
 }
 
-#btn-jugar {
-    font-size: 1.2em;
+/* Estilo para el botón de "Guardar Perfil" */
+#btn-guardar-perfil {
     background-color: #27ae60;
-    padding: 12px 25px;
+    box-shadow: 0 4px #1e8449;
 }
 
-#btn-jugar:hover:not(:disabled) {
+#btn-guardar-perfil:hover:not(:disabled) {
     background-color: #2ecc71;
+    transform: translateY(-2px);
+    box-shadow: 0 6px #1e8449;
 }
 
-#btn-google-signin {
-    background-color: #e74c3c;
-}
-#btn-google-signin:hover:not(:disabled) {
-    background-color: #c0392b;
+/* Estilo para el mensaje de error */
+#nombre-fijo-error {
+    color: #e74c3c !important; 
+    font-weight: bold;
+    margin-top: 5px;
 }
