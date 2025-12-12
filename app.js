@@ -14,17 +14,17 @@ firebase.initializeApp(firebaseConfig);
 // Referencias a los servicios
 const auth = firebase.auth();
 const db = firebase.firestore();
-// REFERENCIA A REALTIME DATABASE (RTDB) para la lógica multijugador
+// REFERENCIA A REALTIME DATABASE (RTDB)
 const rtdb = firebase.database(); 
 
 // --- 2. REFERENCIAS A ELEMENTOS DEL DOM ---
-
+// Contenedores de pantallas
 const authScreen = document.getElementById('auth-screen');
 const setupScreen = document.getElementById('setup-screen');
 const lobbyScreen = document.getElementById('game-lobby');
-// NUEVOS CONTENEDORES
 const customLobbyScreen = document.getElementById('custom-lobby');
 
+// Botones y campos de perfil
 const btnGoogleSignIn = document.getElementById('btn-google-signin');
 const btnGuardarPerfil = document.getElementById('btn-guardar-perfil');
 const inputNickname = document.getElementById('input-nickname');
@@ -32,7 +32,11 @@ const inputNombreFijo = document.getElementById('input-nombre-fijo');
 const nombreFijoError = document.getElementById('nombre-fijo-error');
 const lobbyNickname = document.getElementById('lobby-nickname');
 
-// NUEVOS BOTONES DE LOBBY (Asegúrate de que existan en tu index.html)
+// Botones de navegación (Deben existir en el HTML)
+const btnJugar = document.getElementById('btn-jugar'); // Aunque no lo uses aún, es buena práctica referenciarlo
+const btnPerfil = document.getElementById('btn-perfil');
+
+// Botones de Lobby
 const btnHost = document.getElementById('btn-host');
 const btnJoin = document.getElementById('btn-join');
 
@@ -40,24 +44,33 @@ const btnJoin = document.getElementById('btn-join');
 // --- 3. FUNCIÓN PARA CAMBIAR DE PANTALLA ---
 
 function showScreen(screen) {
+    // Ocultar todas las secciones principales
     authScreen.style.display = 'none';
     setupScreen.style.display = 'none';
     lobbyScreen.style.display = 'none';
-    customLobbyScreen.style.display = 'none'; // NUEVA PANTALLA
-    
-    // Ocultar botones del header
-    document.getElementById('btn-jugar').style.display = 'none';
-    document.getElementById('btn-perfil').style.display = 'none';
-    
+    customLobbyScreen.style.display = 'none'; 
+    document.getElementById('game-play-screen').style.display = 'none';
+
+    // Manejar visibilidad de botones del header
+    const userIsAuthenticated = !!auth.currentUser;
+    btnJugar.style.display = 'none';
+    btnPerfil.style.display = 'none';
+
+    if (userIsAuthenticated) {
+        btnPerfil.style.display = 'inline-block';
+        if (screen === 'lobby' || screen === 'custom-lobby') {
+             btnJugar.style.display = 'inline-block';
+        }
+    }
+
+
     if (screen === 'auth') {
         authScreen.style.display = 'block';
     } else if (screen === 'setup') {
         setupScreen.style.display = 'block';
     } else if (screen === 'lobby') {
         lobbyScreen.style.display = 'block';
-        document.getElementById('btn-jugar').style.display = 'inline-block';
-        document.getElementById('btn-perfil').style.display = 'inline-block';
-    } else if (screen === 'custom-lobby') { // NUEVA PANTALLA DE SALA DE ESPERA
+    } else if (screen === 'custom-lobby') { 
         customLobbyScreen.style.display = 'block';
     }
 }
@@ -70,15 +83,14 @@ btnGoogleSignIn.addEventListener('click', () => {
     auth.signInWithPopup(provider)
         .catch((error) => {
             console.error("Error al iniciar sesión con Google:", error.message);
-            alert("Error de autenticación. Consulta la consola.");
+            // Mostrar error en la interfaz o un alert
+            alert(`Error de autenticación: ${error.message}`);
         });
 });
 
 // Listener principal para el estado de autenticación
 auth.onAuthStateChanged(async (user) => {
     if (user) {
-        console.log("Usuario conectado:", user.uid);
-        
         const userDocRef = db.collection('users').doc(user.uid);
         const userDoc = await userDocRef.get();
 
@@ -95,7 +107,7 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 
-// --- 5. GESTIÓN DE PERFIL (Primer Acceso y Unicidad) ---
+// --- 5. GESTIÓN DE PERFIL (Primer Acceso) ---
 
 // Habilitar el botón si ambos campos están llenos
 [inputNickname, inputNombreFijo].forEach(input => {
@@ -156,7 +168,7 @@ btnGuardarPerfil.addEventListener('click', async () => {
     } catch (error) {
         console.error("Error en la creación del perfil:", error);
         
-        if (error.message === "Nombre Fijo ya en uso.") {
+        if (error.message && error.message.includes("Nombre Fijo ya en uso.")) {
             nombreFijoError.textContent = "Ese Nombre Fijo ya está registrado. Intenta con otro.";
         } else {
             nombreFijoError.textContent = "Ocurrió un error al guardar. Intenta de nuevo.";
@@ -183,34 +195,32 @@ btnHost.addEventListener('click', async () => {
 
     const code = generateRoomCode();
     
-    // 1. Obtener el perfil del host para guardarlo en la sala
+    // Obtener el perfil del host
     const userDoc = await db.collection('users').doc(user.uid).get();
     const hostData = userDoc.data();
 
-    // 2. Estructura inicial de la sala en Realtime Database
     const roomData = {
         code: code,
         hostId: user.uid,
         hostName: hostData.nickname,
-        status: 'waiting', // esperando, in_game, finished
+        status: 'waiting', 
         players: {
-            [user.uid]: { // Usamos el UID como clave para cada jugador
+            [user.uid]: { 
                 nickname: hostData.nickname,
-                role: null, // civil o impostor
+                role: null, 
                 status: 'ready',
                 voted: false,
-                strikes: 0 // Para marcar las "no palabras" (el 1 rojo)
+                strikes: 0
             }
         },
-        maxPlayers: 30, // Máximo de jugadores
-        roundCount: 0, // Se calcula (jugadores - 2)
+        maxPlayers: 30, 
+        roundCount: 0, 
         currentRound: 0,
-        currentTurnUID: user.uid, // El host empieza la primera ronda
+        currentTurnUID: user.uid, 
         createdAt: firebase.database.ServerValue.TIMESTAMP
     };
 
     try {
-        // Guardamos la sala usando el código como clave en la colección 'rooms'
         await rtdb.ref(`rooms/${code}`).set(roomData);
         alert(`Partida creada. Código: ${code}. ¡Compártelo!`);
         
@@ -254,11 +264,18 @@ async function joinRoom(code, user) {
         return alert("Error: La sala está llena.");
     }
 
-    // 1. Obtener el perfil del jugador
+    // Si ya está en la sala, lo llevamos a la pantalla sin re-añadirlo
+    if (roomData.players && roomData.players[user.uid]) {
+         enterLobbyScreen(code, roomData.hostId === user.uid);
+         return;
+    }
+
+
+    // Obtener el perfil del jugador
     const userDoc = await db.collection('users').doc(user.uid).get();
     const playerData = userDoc.data();
 
-    // 2. Añadir el jugador a la lista de la sala
+    // Añadir el jugador a la lista de la sala
     const playerUpdate = {
         nickname: playerData.nickname,
         role: null,
@@ -280,10 +297,9 @@ async function joinRoom(code, user) {
 }
 
 // ----------------------------------------------------
-// C. PANTALLA DE SALA DE ESPERA (RENDERIZADO)
+// C. PANTALLA DE SALA DE ESPERA (RENDERIZADO Y LISTENERS)
 // ----------------------------------------------------
 
-// Esta función es temporal para ver si el host/join funciona
 function enterLobbyScreen(code, isHost) {
     showScreen('custom-lobby');
     customLobbyScreen.innerHTML = `
@@ -296,86 +312,90 @@ function enterLobbyScreen(code, isHost) {
         </div>
 
         <div style="margin-top: 30px;">
-            ${isHost ? '<button id="btn-start-game" style="background-color: #27ae60;">INICIAR JUEGO (Mínimo 4 jugadores)</button>' : ''}
+            ${isHost ? '<button id="btn-start-game" style="background-color: #27ae60;">INICIAR JUEGO (Mínimo 4)</button>' : ''}
             <button id="btn-leave-lobby" style="background-color: #e74c3c;">❌ Salir de Sala</button>
         </div>
-        <p style="margin-top: 20px;">**NOTA IMPORTANTE:** El Host, si abandona la sala, la partida se CERRARÁ (según tu requisito).</p>
+        <p style="margin-top: 20px;">**NOTA:** El Host (anfitrión) debe permanecer en la sala para que no se cierre.</p>
     `;
     
-    // Configurar listeners de la sala
     setupRoomListeners(code, isHost);
 }
 
-// ----------------------------------------------------
-// D. SINCRONIZACIÓN DE LA SALA (ESCUCHAS EN RTDB)
-// ----------------------------------------------------
 function setupRoomListeners(code, isHost) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
     // Listener para actualizar la lista de jugadores en tiempo real
+    // Usamos 'value' para sincronizar toda la lista
     roomRef.child('players').on('value', (snapshot) => {
         const playersData = snapshot.val();
         const playerListElement = document.getElementById('player-list');
         const playerCountElement = document.getElementById('player-count');
 
-        if (!playerListElement) return; // Si la pantalla ya fue cambiada
+        if (!playerListElement || !playersData) return;
 
         let html = '';
-        let count = 0;
-        for (const uid in playersData) {
-            count++;
+        const playerUIDs = Object.keys(playersData);
+        const count = playerUIDs.length;
+        
+        playerUIDs.forEach(uid => {
             const player = playersData[uid];
-            // Destaca al Host
             const isPlayerHost = uid === roomRef.hostId;
             html += `<li style="text-align: left; padding: 5px; border-bottom: 1px solid #313a5a;">
                         ${isPlayerHost ? '👑' : ''} ${player.nickname} 
                         (${uid === auth.currentUser.uid ? 'Tú' : 'Listo'})
                     </li>`;
-        }
+        });
         
         playerCountElement.textContent = count;
         playerListElement.innerHTML = html;
         
-        // Habilitar/Deshabilitar botón de inicio para el Host
+        // Lógica de inicio de juego
         const btnStart = document.getElementById('btn-start-game');
         if (isHost && btnStart) {
-            btnStart.disabled = (count < 4); // Mínimo 4 jugadores para iniciar
+            btnStart.disabled = (count < 4); 
+            if (count >= 4) {
+                 btnStart.textContent = `INICIAR JUEGO (${count} jugadores)`;
+            } else {
+                 btnStart.textContent = `INICIAR JUEGO (Mínimo 4)`;
+            }
         }
     });
 
     // Listener para el botón de salir de sala
     document.getElementById('btn-leave-lobby').addEventListener('click', async () => {
-        // Remover al jugador de la sala
-        await roomRef.child(`players/${auth.currentUser.uid}`).remove();
+        const currentUserUID = auth.currentUser.uid;
         
-        // Si el que sale es el Host, borramos toda la sala, siguiendo tu regla
+        // 1. Remover al jugador de la sala
+        await roomRef.child(`players/${currentUserUID}`).remove();
+        
+        // 2. Detener los listeners de la sala
+        roomRef.off();
+
+        // 3. Si el que sale es el Host, borramos toda la sala
         if (isHost) {
              alert("¡El Host se fue! Cerrando la partida para todos...");
-             await roomRef.remove(); // Elimina la sala completa
+             await roomRef.remove(); 
         } else {
              alert("Has salido de la sala.");
         }
         
-        // Detener todos los listeners de la sala
-        roomRef.off();
         showScreen('lobby');
     });
 
-    // Listener para el botón de INICIAR JUEGO (Solo Host)
+    // Listener para INICIAR JUEGO (Solo Host)
     if (isHost) {
         document.getElementById('btn-start-game').addEventListener('click', () => {
-             // Aquí iría la lógica para asignar roles, palabras y cambiar el estado de la sala a 'in_game'
-             alert("¡Juego iniciado! (La lógica de asignación de roles viene después...)");
-             // Por ahora, solo simula el inicio
-             // **Próximo Paso: Implementar StartGameLogic(code)**
+             // **PRÓXIMO PASO: Implementar la lógica de Asignación de Roles**
+             alert("¡Juego iniciado! Preparando asignación de roles y palabra secreta...");
+             // setRoomStatus(code, 'in_game'); // Se implementará luego
         });
     }
 
-    // Listener para detectar que la sala ha sido eliminada por el host
+    // Listener para detectar que la sala ha sido eliminada por el host (solo para invitados)
     if (!isHost) {
         roomRef.on('value', (snapshot) => {
             if (!snapshot.exists() && customLobbyScreen.style.display === 'block') {
-                roomRef.off(); // Detiene el listener
+                roomRef.off(); 
                 alert("El Host ha cerrado la partida. Volviendo al lobby.");
                 showScreen('lobby');
             }
