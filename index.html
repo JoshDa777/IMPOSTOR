@@ -1,53 +1,17 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impostor - El Juego de la Palabra</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-    <header>
-        <div id="nav-perfil">
-            <button id="btn-perfil" style="display: none;">👤 Perfil</button>
-        </div>
-        <h1>IMPOSTOR</h1>
-        <button id="btn-jugar" style="display: none;">▶️ Jugar</button>
-    </header>
-
-    <main id="main-content">
-        <section id="auth-screen">
-            <h2>Bienvenido a Impostor</h2>
-            <p>Inicia sesión para empezar a jugar y guardar tus estadísticas.</p>
-            <button id="btn-google-signin">Iniciar Sesión con Google</button>
-        </section>
-
-        <section id="setup-screen" style="display: none;">
-            <h2>¡Casi listo! Define tu identidad</h2>
-            <div class="form-group">
-                <label for="input-nickname">Nickname (Cambiable):</label>
-                <input type="text" id="input-nickname" maxlength="20" required>
-            </div>
-            <div class="form-group">
-                <label for="input-nombre-fijo">Nombre Fijo (Permanente, para buscar amigos):</label>
-                <input type="text" id="input-nombre-fijo" maxlength="15" required>
-                <p id="nombre-fijo-error" style="color: red; display: none;"></p>
-            </div>
-            <button id="btn-guardar-perfil" disabled>Guardar y Jugar</button>
-        </section>
-        
-        <section id="game-lobby" style="display: none;">
-            <h2>Sala Principal</h2>
-            <p>Hola, <span id="lobby-nickname"></span>.</p>
-            </section>
-
-    </main>
-
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+<section id="game-lobby" style="display: none;">
+    <h2>Sala Principal</h2>
+    <p>Hola, <span id="lobby-nickname"></span>.</p>
     
-    <script src="app.js"></script>
-</body>
-</html>
+    <div id="secondary-actions" style="margin-bottom: 20px;">
+        <button id="btn-amigos" class="secondary-btn">🤝 Amigos</button>
+        <button id="btn-config" class="secondary-btn">⚙️ Configuración</button>
+        </div>
+
+    <hr style="border-color: #4a69bd; margin: 30px 0;">
+
+    <div id="lobby-actions">
+        <h3>¿Qué quieres hacer?</h3>
+        <button id="btn-host" class="action-btn" style="background-color: #2980b9;">👑 Crear Partida (Host)</button>
+        <button id="btn-join" class="action-btn" style="background-color: #8e44ad;">🔗 Unirse a Partida</button>
+    </div>
+</section>
