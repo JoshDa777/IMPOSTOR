@@ -34,7 +34,6 @@ header h1 {
 }
 
 #nav-actions {
-    /* Contenedor de los botones de navegación */
     display: flex;
     gap: 10px;
 }
@@ -54,7 +53,7 @@ header h1 {
 button {
     border: none;
     padding: 12px 25px;
-    margin: 10px 5px; /* Ajuste margen horizontal */
+    margin: 10px 5px; 
     border-radius: 50px; 
     cursor: pointer;
     font-size: 1.1em;
@@ -72,7 +71,7 @@ button:disabled {
 
 /* Botón Jugar (Principal) */
 #btn-jugar {
-    background-color: #4a69bd; /* Azul Primario */
+    background-color: #4a69bd; 
     color: #f0f0f0;
     box-shadow: 0 4px #2c438c;
 }
@@ -87,7 +86,7 @@ button:disabled {
     padding: 15px 30px;
     font-size: 1.2em;
     margin: 15px;
-    width: 80%; /* Hacerlos más anchos */
+    width: 80%; 
     display: block;
     margin: 15px auto;
     border-radius: 8px;
@@ -96,7 +95,7 @@ button:disabled {
 
 /* Botón de Google Sign-in */
 #btn-google-signin {
-    background-color: #e74c3c; /* Rojo de Impostor */
+    background-color: #e74c3c; 
     color: white;
     box-shadow: 0 4px #b93c2d;
 }
@@ -113,7 +112,7 @@ button:disabled {
     padding: 10px 15px;
     font-size: 0.9em;
     border-radius: 8px;
-    text-transform: none; /* No Mayúsculas */
+    text-transform: none; 
     letter-spacing: normal;
 }
 
@@ -167,11 +166,11 @@ button:disabled {
     margin-top: 15px;
 }
 
-#player-list li {
+#player-list li, #game-player-list li {
     padding: 8px 0;
     border-bottom: 1px dashed #4a69bd;
 }
 
-#player-list li:last-child {
+#player-list li:last-child, #game-player-list li:last-child {
     border-bottom: none;
 }
