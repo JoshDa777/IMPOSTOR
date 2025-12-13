@@ -537,7 +537,7 @@ function getNextTurnUID(players, currentUID) {
 async function handleEndTurn(code, currentTurnUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
 
-    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    // CORRECCIÓN: La función transaction recibe directamente los datos, no el snapshot.
     await roomRef.transaction(roomData => { 
         if (!roomData || roomData.currentTurnUID !== currentTurnUID || roomData.voting.status !== 'discussion') {
             return; 
@@ -567,7 +567,7 @@ async function handleEndTurn(code, currentTurnUID) {
 async function handleStrike(code, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
-    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    // CORRECCIÓN: La función transaction recibe directamente los datos.
     await roomRef.transaction(roomData => { 
         if (!roomData) return;
 
@@ -609,8 +609,10 @@ async function registerVote(code, voterUID, targetUID) {
     }
 
     let hasVoted = false;
-    Object.keys(roomData.voting.votes || {}).forEach(accusedUID => {
-        if (roomData.voting.votes[accusedUID] && roomData.voting.votes[accusedUID][voterUID]) {
+    // Esto verifica si el jugador ya votó por ALGUIEN en esta ronda (aunque la votación sea abierta, solo se permite un voto)
+    const allVotes = roomData.voting.votes || {};
+    Object.keys(allVotes).forEach(targetUID => {
+        if (allVotes[targetUID] && allVotes[targetUID][voterUID]) {
             hasVoted = true;
         }
     });
@@ -644,6 +646,7 @@ async function checkVoteResults(code) {
         votesCast += Object.keys(allVotes[targetUID] || {}).length;
     });
 
+    // Si no todos los jugadores activos han votado, salimos.
     if (votesCast < totalActivePlayers) {
         return; 
     }
@@ -668,7 +671,7 @@ async function checkVoteResults(code) {
         }
     });
     
-    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    // CORRECCIÓN CRÍTICA: La función transaction recibe directamente los datos.
     await roomRef.transaction(currentData => { 
         if (!currentData || currentData.voting.status !== 'voting') {
             return; 
@@ -678,23 +681,34 @@ async function checkVoteResults(code) {
         let nextTurnUID = getNextTurnUID(currentData.players, currentData.currentTurnUID);
         
         let outcomeMessage = '';
+        
+        // 1. Lógica de ELIMINACIÓN (mayoría absoluta y sin empate)
         if (maxVotes > 0 && maxVotes > (totalActivePlayers / 2) && !isTie) {
-            const eliminatedRole = currentData.players[mostAccusedUID].role;
-            const eliminatedNickname = currentData.players[mostAccusedUID].nickname;
             
-            updates[`players/${mostAccusedUID}/isEliminated`] = true;
-            updates[`players/${mostAccusedUID}/status`] = 'eliminated_by_vote';
-            
-            if (eliminatedRole === 'impostor') {
-                outcomeMessage = `¡VICTORIA CIVIL! El impostor ${eliminatedNickname} ha sido eliminado.`;
+            // Validar que el jugador a eliminar todavía exista y no esté ya eliminado.
+            if (!currentData.players[mostAccusedUID] || currentData.players[mostAccusedUID].isEliminated) {
+                 // Si el jugador ya está eliminado o no existe, solo reiniciamos el voto.
+                 outcomeMessage = "El jugador más votado ya no está activo. Reiniciando ronda.";
             } else {
-                outcomeMessage = `¡ERROR! ${eliminatedNickname} era Civil. La partida continúa.`;
+                // Proceder a la eliminación
+                const eliminatedRole = currentData.players[mostAccusedUID].role;
+                const eliminatedNickname = currentData.players[mostAccusedUID].nickname;
+                
+                updates[`players/${mostAccusedUID}/isEliminated`] = true;
+                updates[`players/${mostAccusedUID}/status`] = 'eliminated_by_vote';
+                
+                if (eliminatedRole === 'impostor') {
+                    outcomeMessage = `¡VICTORIA CIVIL! El impostor ${eliminatedNickname} ha sido eliminado.`;
+                } else {
+                    outcomeMessage = `¡ERROR! ${eliminatedNickname} era Civil. La partida continúa.`;
+                }
             }
+
         } else {
             outcomeMessage = isTie ? "¡Empate en la votación! Nadie es eliminado." : "No se alcanzó la mayoría para eliminar a nadie.";
         }
         
-        // Resetear y continuar
+        // 2. Resetear y continuar la discusión
         updates['voting/status'] = 'discussion';
         updates['voting/votes'] = null; 
         updates['voting/accusedUID'] = null;
@@ -712,7 +726,7 @@ async function checkVoteResults(code) {
             ref[parts[parts.length - 1]] = updates[key];
         });
 
-        // Comprobación de fin de juego
+        // 3. Comprobación de fin de juego (después de la eliminación)
         const remainingActive = Object.keys(currentData.players).filter(uid => !currentData.players[uid].isEliminated);
         const remainingImpostors = remainingActive.filter(uid => currentData.players[uid].role === 'impostor');
         const remainingCivilians = remainingActive.filter(uid => currentData.players[uid].role === 'civil');
@@ -725,7 +739,7 @@ async function checkVoteResults(code) {
              currentData.winner = 'impostor';
         }
         
-        // Mostrar mensaje del resultado de la votación (solo si el juego no terminó)
+        // 4. Mostrar mensaje del resultado de la votación
         if (currentData.status !== 'finished') {
              alert(outcomeMessage);
         } else {
@@ -902,8 +916,10 @@ function renderVotingArea(roomData, currentUserUID) {
         const players = roomData.players;
         
         let hasVoted = false;
-        Object.keys(roomData.voting.votes || {}).forEach(targetUID => {
-            if (roomData.voting.votes[targetUID] && roomData.voting.votes[targetUID][currentUserUID]) {
+        // Revisa si ya votó en esta ronda (ya que el voto es abierto, debe revisar todos los targets)
+        const allVotes = roomData.voting.votes || {};
+        Object.keys(allVotes).forEach(targetUID => {
+            if (allVotes[targetUID] && allVotes[targetUID][currentUserUID]) {
                 hasVoted = true;
             }
         });
