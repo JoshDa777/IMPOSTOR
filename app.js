@@ -537,9 +537,8 @@ function getNextTurnUID(players, currentUID) {
 async function handleEndTurn(code, currentTurnUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
 
-    // CORRECCIÓN: Usar roomRef.transaction()
-    await roomRef.transaction(roomSnapshot => { 
-        const roomData = roomSnapshot.val();
+    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    await roomRef.transaction(roomData => { 
         if (!roomData || roomData.currentTurnUID !== currentTurnUID || roomData.voting.status !== 'discussion') {
             return; 
         }
@@ -568,9 +567,8 @@ async function handleEndTurn(code, currentTurnUID) {
 async function handleStrike(code, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
-    // CORRECCIÓN: Usar roomRef.transaction()
-    await roomRef.transaction(roomSnapshot => { 
-        const roomData = roomSnapshot.val();
+    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    await roomRef.transaction(roomData => { 
         if (!roomData) return;
 
         const player = roomData.players[targetUID];
@@ -670,9 +668,8 @@ async function checkVoteResults(code) {
         }
     });
     
-    // CORRECCIÓN: Usar roomRef.transaction()
-    await roomRef.transaction(currentDataSnapshot => { 
-        const currentData = currentDataSnapshot.val();
+    // CORRECCIÓN CRÍTICA: Eliminar .val()
+    await roomRef.transaction(currentData => { 
         if (!currentData || currentData.voting.status !== 'voting') {
             return; 
         }
@@ -723,11 +720,9 @@ async function checkVoteResults(code) {
         if (remainingImpostors.length === 0) {
              currentData.status = 'finished';
              currentData.winner = 'civil';
-             // No alertamos aquí, lo hacemos fuera de la transacción para evitar bloqueos
         } else if (remainingImpostors.length >= remainingCivilians.length) {
              currentData.status = 'finished';
              currentData.winner = 'impostor';
-             // No alertamos aquí
         }
         
         // Mostrar mensaje del resultado de la votación (solo si el juego no terminó)
