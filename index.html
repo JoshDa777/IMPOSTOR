@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IMPOSTOR - El Juego de la Palabra</title>
+    <title>IMPOSTOR - El Juego de la Palabra Secreta</title>
     <link rel="stylesheet" href="style.css">
+
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1830057227860030"
+     crossorigin="anonymous"></script>
+
 </head>
 <body>
 
@@ -43,6 +47,18 @@
             <h2>Sala Principal</h2>
             <p>Hola, <span id="lobby-nickname"></span>.</p>
             
+            <div id="ad-container" style="margin: 20px 0;">
+                <ins class="adsbygoogle"
+                     style="display:block; min-height: 100px; background-color: #313a5a;"
+                     data-ad-client="ca-pub-1830057227860030"
+                     data-ad-slot="YOUR_AD_SLOT_ID_HERE" 
+                     data-ad-format="auto"
+                     data-full-width-responsive="true"></ins>
+                <script>
+                     (adsbygoogle = window.adsbygoogle || []).push({});
+                </script>
+            </div>
+            
             <div id="secondary-actions" style="margin-bottom: 20px;">
                 <button id="btn-amigos" class="secondary-btn">🤝 Amigos</button>
                 <button id="btn-config" class="secondary-btn">⚙️ Personalización</button>
@@ -61,7 +77,33 @@
             </section>
 
         <section id="game-play-screen" style="display: none;">
-            </section>
+             <h2 id="role-display" style="color: #e74c3c;">TU ROL: Cargando...</h2>
+             <h3 id="word-display" style="color: #27ae60;">PALABRA: Cargando...</h3>
+             
+             <hr>
+             <p>Ronda: <span id="round-display">1</span></p>
+
+             <div id="game-info">
+                <p>Turno de: <span id="current-turn-player"></span></p>
+                <p>Tiempo restante: <span id="timer-display">60</span> segundos</p>
+             </div>
+
+             <div id="player-inputs">
+                <button id="btn-end-turn" style="background-color: #4a69bd; display: none;">✅ Terminar Turno</button>
+                
+                <button id="btn-start-vote" style="background-color: #e74c3c; margin-top: 15px;">🚨 ACUSAR (VOTACIÓN)</button>
+
+                <div id="voting-area" style="margin-top: 20px;">
+                    <h4 id="voting-title" style="display: none;">Elige a quién ACUSAR:</h4>
+                    <ul id="vote-player-list" style="list-style: none; padding: 0;">
+                        </ul>
+                </div>
+
+                <h4 style="margin-top: 30px;">Estado de Jugadores:</h4>
+                <ul id="game-player-list" style="list-style: none; padding: 0;"></ul>
+             </div>
+
+        </section>
 
     </main>
 
