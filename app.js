@@ -49,7 +49,7 @@ let currentRoomCode = null;
 let gameTimerInterval = null;
 
 
-// --- 3. DICCIONARIO Y LÓGICA DE ROLES (MISMO CÓDIGO) ---
+// --- 3. DICCIONARIO Y LÓGICA DE ROLES ---
 const wordsDictionary = [
     { civil: "Tierra", impostor: "Marte" },
     { civil: "Fuego", impostor: "Humo" },
@@ -136,13 +136,12 @@ function showScreen(screen) {
 }
 
 
-// --- 5. GESTIÓN DE LA AUTENTICACIÓN (MISMO CÓDIGO) ---
+// --- 5. GESTIÓN DE LA AUTENTICACIÓN ---
 
 btnGoogleSignIn.addEventListener('click', () => {
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider)
         .catch((error) => {
-            // Este error puede ser un problema de dominio no autorizado en Firebase Auth
             console.error("Error al iniciar sesión con Google:", error.message);
             alert(`Error de autenticación. Verifica la consola de Firebase: ${error.message}`);
         });
@@ -166,7 +165,7 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 
-// --- 6. GESTIÓN DE PERFIL (MISMO CÓDIGO) ---
+// --- 6. GESTIÓN DE PERFIL ---
 
 [inputNickname, inputNombreFijo].forEach(input => {
     input.addEventListener('input', () => {
@@ -236,7 +235,7 @@ btnGuardarPerfil.addEventListener('click', async () => {
 });
 
 
-// --- 7. LÓGICA DE SALAS MULTIJUGADOR (HOST Y JOIN) (MISMO CÓDIGO) ---
+// --- 7. LÓGICA DE SALAS MULTIJUGADOR (HOST Y JOIN) ---
 
 function generateRoomCode() {
     return Math.floor(1000000 + Math.random() * 9000000).toString();
@@ -355,7 +354,7 @@ async function joinRoom(code, user) {
 }
 
 
-// --- 8. GESTIÓN DE SALA DE ESPERA Y START GAME (MISMO CÓDIGO) ---
+// --- 8. GESTIÓN DE SALA DE ESPERA Y START GAME ---
 
 function enterLobbyScreen(code, isHost) {
     showScreen('custom-lobby');
@@ -537,6 +536,7 @@ async function handleEndTurn(code, currentTurnUID) {
         const nextUID = getNextTurnUID(players, currentTurnUID);
 
         if (!nextUID) {
+             // Esto se manejará en la Fase 5: Comprobación de Victoria
              roomData.status = 'finished';
         } else {
             roomData.currentTurnUID = nextUID;
@@ -588,10 +588,10 @@ async function startVotingPhase(code, accusedUID = null) {
 async function registerVote(code, voterUID, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
-    await roomRef.child(`voting/votes/${targetUID}/${voterUID}`).set(true);
+    await rtdb.child(`rooms/${code}/voting/votes/${targetUID}/${voterUID}`).set(true);
 
-    // Lógica para comprobar si todos han votado y finalizar la fase de votación
-    // Esto se haría en un Cloud Function o en un listener más complejo, pero por ahora solo registraremos
+    const roomSnapshot = await roomRef.once('value');
+    const roomData = roomSnapshot.val();
     alert(`Tu voto por ${roomData.players[targetUID].nickname} ha sido registrado.`); 
 }
 
@@ -664,7 +664,6 @@ function startLocalTimer(roomData, currentUserUID) {
             clearInterval(gameTimerInterval);
             timerDisplay.textContent = "¡TIEMPO AGOTADO!";
             
-            // Solo el jugador en turno debe aplicar el strike
             if (roomData.currentTurnUID === currentUserUID) {
                 await handleStrike(currentRoomCode, currentUserUID);
                 await handleEndTurn(currentRoomCode, currentUserUID);
