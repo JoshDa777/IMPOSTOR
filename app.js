@@ -153,6 +153,15 @@ auth.onAuthStateChanged(async (user) => {
         const userDoc = await userDocRef.get();
 
         if (userDoc.exists) {
+            // Intenta reingresar a una partida si existe un código de sala
+            if (currentRoomCode) {
+                 const roomSnapshot = await rtdb.ref(`rooms/${currentRoomCode}`).once('value');
+                 if (roomSnapshot.exists() && roomSnapshot.val().status === 'in_game') {
+                     enterGameScreen(currentRoomCode);
+                     return;
+                 }
+                 currentRoomCode = null; // Limpiar si la sala ya no existe o terminó
+            }
             showScreen('lobby');
             lobbyNickname.textContent = userDoc.data().nickname;
         } else {
@@ -511,16 +520,17 @@ async function startGame(code) {
 function getNextTurnUID(players, currentUID) {
     const uids = Object.keys(players).sort(); 
     let currentIndex = uids.indexOf(currentUID);
-    let nextIndex = (currentIndex + 1) % uids.length;
-    let originalIndex = currentIndex;
+    let nextIndex = currentIndex;
+    const totalPlayers = uids.length;
 
-    while (players[uids[nextIndex]].isEliminated) {
-        nextIndex = (nextIndex + 1) % uids.length;
-        if (nextIndex === originalIndex) {
-            return null; 
+    for (let i = 0; i < totalPlayers; i++) {
+        nextIndex = (nextIndex + 1) % totalPlayers;
+        if (!players[uids[nextIndex]].isEliminated) {
+            return uids[nextIndex];
         }
+        if (nextIndex === currentIndex) break; // Evita bucle infinito si solo quedan eliminados
     }
-    return uids[nextIndex];
+    return null; // Nadie más está activo
 }
 
 async function handleEndTurn(code, currentTurnUID) {
@@ -528,22 +538,26 @@ async function handleEndTurn(code, currentTurnUID) {
 
     await rtdb.runTransaction(roomSnapshot => {
         const roomData = roomSnapshot.val();
-        if (!roomData || roomData.currentTurnUID !== currentTurnUID) {
-            return;
+        if (!roomData || roomData.currentTurnUID !== currentTurnUID || roomData.voting.status !== 'discussion') {
+            return; // Aborta si no es tu turno o no estamos en discusión
         }
 
         const players = roomData.players;
         const nextUID = getNextTurnUID(players, currentTurnUID);
 
         if (!nextUID) {
-             // Esto se manejará en la Fase 5: Comprobación de Victoria
-             roomData.status = 'finished';
+             // Caso de victoria, se maneja en la comprobación de estado de juego
+             return; 
         } else {
+            const playerUIDs = Object.keys(players).sort();
+            // Buscar el primer jugador activo para saber cuándo se completa la ronda
+            const firstActiveUID = playerUIDs.find(uid => !players[uid].isEliminated); 
+            
             roomData.currentTurnUID = nextUID;
             roomData.turnStartTime = firebase.database.ServerValue.TIMESTAMP;
             
-            const playerUIDs = Object.keys(players).sort();
-            if (nextUID === playerUIDs[0]) { 
+            // Si el siguiente jugador es el primero activo, iniciamos nueva ronda
+            if (nextUID === firstActiveUID) { 
                  roomData.currentRound += 1;
             }
         }
@@ -560,13 +574,12 @@ async function handleStrike(code, targetUID) {
         if (!roomData) return;
 
         const player = roomData.players[targetUID];
-        if (player) {
+        if (player && !player.isEliminated) {
             player.strikes = (player.strikes || 0) + 1;
             
             if (player.strikes >= 2) {
                 player.isEliminated = true;
-                player.status = 'eliminated';
-                alert(`${player.nickname} ha sido eliminado por acumular 2 strikes!`);
+                player.status = 'eliminated_by_strikes';
             }
         }
         return roomData;
@@ -582,21 +595,156 @@ async function startVotingPhase(code, accusedUID = null) {
         accusedUID: accusedUID, 
         startTime: firebase.database.ServerValue.TIMESTAMP
     });
-    alert("¡Votación iniciada! Elijan un jugador.");
 }
 
 async function registerVote(code, voterUID, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
-    await rtdb.child(`rooms/${code}/voting/votes/${targetUID}/${voterUID}`).set(true);
-
+    // Verificamos si el jugador ya votó para evitar re-votos
     const roomSnapshot = await roomRef.once('value');
     const roomData = roomSnapshot.val();
+    
+    if (roomData.players[voterUID].isEliminated) {
+        alert("No puedes votar, estás eliminado.");
+        return;
+    }
+
+    // Comprobación rápida si ya votó
+    let hasVoted = false;
+    Object.keys(roomData.voting.votes || {}).forEach(accusedUID => {
+        if (roomData.voting.votes[accusedUID] && roomData.voting.votes[accusedUID][voterUID]) {
+            hasVoted = true;
+        }
+    });
+
+    if (hasVoted) {
+        alert("¡Ya emitiste tu voto en esta ronda!");
+        return;
+    }
+
+    // Registrar el voto
+    await roomRef.child(`voting/votes/${targetUID}/${voterUID}`).set(true);
     alert(`Tu voto por ${roomData.players[targetUID].nickname} ha sido registrado.`); 
 }
 
 
-// --- 10. GESTIÓN DE PANTALLA DE JUEGO (Actualizada) ---
+async function checkVoteResults(code) {
+    const roomRef = rtdb.ref(`rooms/${code}`);
+    const roomSnapshot = await roomRef.once('value');
+    const roomData = roomSnapshot.val();
+
+    if (!roomData || roomData.voting.status !== 'voting') return;
+
+    const players = roomData.players;
+    const activePlayers = Object.keys(players).filter(uid => !players[uid].isEliminated);
+    const totalActivePlayers = activePlayers.length;
+    
+    if (totalActivePlayers <= 1) return;
+    
+    let votesCast = 0;
+    const allVotes = roomData.voting.votes || {};
+    Object.keys(allVotes).forEach(targetUID => {
+        votesCast += Object.keys(allVotes[targetUID] || {}).length;
+    });
+
+    // Si aún faltan jugadores activos por votar, salir.
+    if (votesCast < totalActivePlayers) {
+        return; 
+    }
+
+    // Tally the votes
+    const voteTally = {};
+    Object.keys(allVotes).forEach(targetUID => {
+        voteTally[targetUID] = Object.keys(allVotes[targetUID] || {}).length;
+    });
+
+    // Encontrar al más acusado
+    let mostAccusedUID = null;
+    let maxVotes = 0;
+    let isTie = false;
+    
+    Object.keys(voteTally).forEach(uid => {
+        if (voteTally[uid] > maxVotes) {
+            maxVotes = voteTally[uid];
+            mostAccusedUID = uid;
+            isTie = false;
+        } else if (voteTally[uid] === maxVotes && maxVotes > 0) {
+            isTie = true; 
+        }
+    });
+    
+    // ******* Ejecutar la Transacción de Eliminación y Reinicio *******
+    await rtdb.runTransaction(currentDataSnapshot => {
+        const currentData = currentDataSnapshot.val();
+        if (!currentData || currentData.voting.status !== 'voting') {
+            return; 
+        }
+        
+        const updates = {};
+        let nextTurnUID = getNextTurnUID(currentData.players, currentData.currentTurnUID);
+        
+        // 1. Determinar si hubo eliminación
+        let outcomeMessage = '';
+        if (maxVotes > 0 && maxVotes > (totalActivePlayers / 2) && !isTie) {
+            const eliminatedRole = currentData.players[mostAccusedUID].role;
+            const eliminatedNickname = currentData.players[mostAccusedUID].nickname;
+            
+            updates[`players/${mostAccusedUID}/isEliminated`] = true;
+            updates[`players/${mostAccusedUID}/status`] = 'eliminated_by_vote';
+            
+            if (eliminatedRole === 'impostor') {
+                outcomeMessage = `¡VICTORIA CIVIL! El impostor ${eliminatedNickname} ha sido eliminado.`;
+            } else {
+                outcomeMessage = `¡ERROR! ${eliminatedNickname} era Civil. La partida continúa.`;
+            }
+        } else {
+            outcomeMessage = isTie ? "¡Empate en la votación! Nadie es eliminado." : "No se alcanzó la mayoría para eliminar a nadie.";
+        }
+        
+        // 2. Resetear y continuar
+        updates['voting/status'] = 'discussion';
+        updates['voting/votes'] = null; 
+        updates['voting/accusedUID'] = null;
+        updates['currentTurnUID'] = nextTurnUID;
+        updates['turnStartTime'] = firebase.database.ServerValue.TIMESTAMP;
+
+        // Aplicar actualizaciones (Transacción)
+        Object.keys(updates).forEach(key => {
+            let parts = key.split('/');
+            let ref = currentData;
+            for (let i = 0; i < parts.length - 1; i++) {
+                ref[parts[i]] = ref[parts[i]] || {};
+                ref = ref[parts[i]];
+            }
+            ref[parts[parts.length - 1]] = updates[key];
+        });
+
+        // 3. Comprobación de fin de juego después de la votación
+        const remainingActive = Object.keys(currentData.players).filter(uid => !currentData.players[uid].isEliminated);
+        const remainingImpostors = remainingActive.filter(uid => currentData.players[uid].role === 'impostor');
+        const remainingCivilians = remainingActive.filter(uid => currentData.players[uid].role === 'civil');
+        
+        if (remainingImpostors.length === 0) {
+             currentData.status = 'finished';
+             currentData.winner = 'civil';
+             alert("¡Victoria Civil! Todos los impostores han sido eliminados.");
+        } else if (remainingImpostors.length >= remainingCivilians.length) {
+             currentData.status = 'finished';
+             currentData.winner = 'impostor';
+             alert("¡Victoria Impostor! Quedan tantos o más impostores que civiles.");
+        }
+        
+        // Mostrar mensaje del resultado de la votación (solo si el juego no terminó)
+        if (currentData.status !== 'finished') {
+             alert(outcomeMessage);
+        }
+
+        return currentData; 
+    });
+}
+
+
+// --- 10. GESTIÓN DE PANTALLA DE JUEGO (Actualizada con comprobación de myPlayer) ---
 
 function enterGameScreen(code) {
     showScreen('game');
@@ -605,20 +753,39 @@ function enterGameScreen(code) {
     const currentUserUID = auth.currentUser.uid;
     
     if (gameTimerInterval) clearInterval(gameTimerInterval);
+    gameTimerInterval = null;
     
     btnEndTurn.onclick = () => handleEndTurn(code, currentUserUID);
     btnStartVote.onclick = () => startVotingPhase(code); 
 
+    roomRef.off(); 
+
     roomRef.on('value', (snapshot) => {
         const roomData = snapshot.val();
-        if (!roomData || roomData.status !== 'in_game') {
+        if (!roomData || roomData.status === 'finished') {
             roomRef.off();
-            if (roomData && roomData.status === 'finished') alert("Juego terminado.");
+            if (roomData && roomData.status === 'finished') alert(`Juego terminado. Ganador: ${roomData.winner.toUpperCase()}`);
             showScreen('lobby');
             return;
         }
+        if (roomData.status !== 'in_game') return;
 
+        // 🚨 CRÍTICO: Comprobación de existencia del jugador actual
         const myPlayer = roomData.players[currentUserUID];
+        if (!myPlayer) {
+             console.warn("Jugador actual no encontrado en la sala. Probablemente desconectado o eliminado.");
+             roomRef.off();
+             showScreen('lobby');
+             return; 
+        }
+        if (myPlayer.isEliminated) {
+             roleDisplay.textContent = `💀 ESTÁS ELIMINADO`;
+             wordDisplay.textContent = `Observando...`;
+             btnEndTurn.style.display = 'none';
+             btnStartVote.style.display = 'none';
+             timerDisplay.textContent = "Eliminado";
+        }
+        
         const isMyTurn = roomData.currentTurnUID === currentUserUID;
 
         roleDisplay.textContent = `TU ROL: ${myPlayer.role.toUpperCase()}`;
@@ -629,25 +796,38 @@ function enterGameScreen(code) {
 
         const turnPlayer = roomData.players[roomData.currentTurnUID];
         currentTurnPlayer.textContent = turnPlayer ? turnPlayer.nickname : 'N/A';
-        btnEndTurn.style.display = isMyTurn && roomData.voting.status === 'discussion' ? 'inline-block' : 'none';
         
+        // Botón de turno solo aparece si es el turno y están en fase de discusión y NO está eliminado
+        btnEndTurn.style.display = isMyTurn && roomData.voting.status === 'discussion' && !myPlayer.isEliminated ? 'inline-block' : 'none';
+        
+        // El botón de votación se muestra si no está eliminado y no estamos en votación
+        btnStartVote.style.display = !myPlayer.isEliminated && roomData.voting.status === 'discussion' ? 'inline-block' : 'none';
+
+
         startLocalTimer(roomData, currentUserUID);
         
         renderVotingArea(roomData, currentUserUID);
         
-        renderGamePlayerList(roomData);
+        // El Host resuelve la votación
+        if (roomData.voting.status === 'voting' && roomData.hostId === currentUserUID) {
+             checkVoteResults(code); 
+        }
         
-        // (FASE 5: Comprobar Ganador se implementará aquí)
+        renderGamePlayerList(roomData);
     });
 }
 
 function startLocalTimer(roomData, currentUserUID) {
-    if (gameTimerInterval) clearInterval(gameTimerInterval);
+    if (gameTimerInterval) {
+        clearInterval(gameTimerInterval);
+        gameTimerInterval = null;
+    }
     
     const isMyTurn = roomData.currentTurnUID === currentUserUID;
     const isDiscussion = roomData.voting.status === 'discussion';
     
-    if (!isMyTurn || !isDiscussion) {
+    // Si no es mi turno, o no estamos en discusión, o estoy eliminado, no hay timer
+    if (!isMyTurn || !isDiscussion || roomData.players[currentUserUID].isEliminated) {
         timerDisplay.textContent = "Esperando turno...";
         return;
     }
@@ -662,9 +842,11 @@ function startLocalTimer(roomData, currentUserUID) {
         
         if (timeLeft <= 0) {
             clearInterval(gameTimerInterval);
+            gameTimerInterval = null;
             timerDisplay.textContent = "¡TIEMPO AGOTADO!";
             
             if (roomData.currentTurnUID === currentUserUID) {
+                // Aplicar penalización y pasar turno
                 await handleStrike(currentRoomCode, currentUserUID);
                 await handleEndTurn(currentRoomCode, currentUserUID);
             }
@@ -701,8 +883,19 @@ function renderGamePlayerList(roomData) {
 
 function renderVotingArea(roomData, currentUserUID) {
     const isVoting = roomData.voting.status === 'voting';
+    const myPlayer = roomData.players[currentUserUID];
     
+    // Si el jugador está eliminado, no mostramos nada de votación/acusación
+    if (myPlayer.isEliminated) {
+         btnStartVote.style.display = 'none';
+         votingTitle.style.display = 'none';
+         votePlayerList.innerHTML = '';
+         return;
+    }
+
+    // Mostrar/ocultar el botón de acusación (inicia la fase de votación)
     btnStartVote.style.display = isVoting ? 'none' : 'inline-block';
+    
     votingTitle.style.display = isVoting ? 'block' : 'none';
     votePlayerList.innerHTML = '';
     
@@ -710,6 +903,7 @@ function renderVotingArea(roomData, currentUserUID) {
         const players = roomData.players;
         
         let hasVoted = false;
+        // Revisa si el usuario actual ya votó
         Object.keys(roomData.voting.votes || {}).forEach(targetUID => {
             if (roomData.voting.votes[targetUID] && roomData.voting.votes[targetUID][currentUserUID]) {
                 hasVoted = true;
@@ -717,17 +911,21 @@ function renderVotingArea(roomData, currentUserUID) {
         });
         
         if (hasVoted) {
-             votingTitle.textContent = "¡Voto Registrado! Esperando a los demás...";
+             votingTitle.textContent = "✅ ¡Voto Registrado! Esperando a los demás...";
              return;
         }
         
+        votingTitle.textContent = "🚨 Elige a quién ACUSAR:";
+        
         Object.keys(players).forEach(targetUID => {
             const p = players[targetUID];
-            if (!p.isEliminated && targetUID !== currentUserUID) {
+            // Solo se puede votar por jugadores activos y que no sean uno mismo
+            if (!p.isEliminated && targetUID !== currentUserUID) { 
                 const voteButton = document.createElement('button');
                 voteButton.textContent = `Votar por ${p.nickname}`;
                 voteButton.style.backgroundColor = '#8e44ad';
                 voteButton.style.margin = '5px';
+                // Añadir el listener para registrar el voto
                 voteButton.onclick = () => registerVote(currentRoomCode, currentUserUID, targetUID);
                 
                 const listItem = document.createElement('li');
