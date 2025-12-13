@@ -36,16 +36,15 @@ const btnJoin = document.getElementById('btn-join');
 // Elementos de la pantalla de JUEGO
 const roleDisplay = document.getElementById('role-display');
 const wordDisplay = document.getElementById('word-display');
-const roundDisplay = document.getElementById('round-display'); // NUEVO: para mostrar la ronda
+const roundDisplay = document.getElementById('round-display'); 
 const currentTurnPlayer = document.getElementById('current-turn-player');
 const timerDisplay = document.getElementById('timer-display');
 const btnEndTurn = document.getElementById('btn-end-turn');
-const btnStartVote = document.getElementById('btn-start-vote'); // NUEVO: Botón de Acusar/Votación
+const btnStartVote = document.getElementById('btn-start-vote'); 
 const votingArea = document.getElementById('voting-area');
 const votingTitle = document.getElementById('voting-title');
 const votePlayerList = document.getElementById('vote-player-list');
 
-// Variable global para la sala actual y el temporizador
 let currentRoomCode = null;
 let gameTimerInterval = null;
 
@@ -61,10 +60,8 @@ const wordsDictionary = [
 ];
 
 function assignRoles(playersData) {
-    // ... (El código de assignRoles es el mismo, no lo repito para ahorrar espacio) ...
     const uids = Object.keys(playersData);
     const numPlayers = uids.length;
-    const numImpostors = 1; 
 
     if (numPlayers < 4) {
         throw new Error("Se necesitan al menos 4 jugadores para iniciar.");
@@ -86,7 +83,7 @@ function assignRoles(playersData) {
             word: isImpostor ? impostorWord : civilWord,
             isTurn: false, 
             strikes: 0,
-            isEliminated: false // NUEVO: Para saber si está fuera del juego
+            isEliminated: false 
         };
     });
 
@@ -96,16 +93,16 @@ function assignRoles(playersData) {
 }
 
 
-// --- 4. FUNCIÓN PARA CAMBIAR DE PANTALLA (MISMO CÓDIGO) ---
+// --- 4. FUNCIÓN PARA CAMBIAR DE PANTALLA Y CORRECCIÓN DE ADSENSE ---
 
 function showScreen(screen) {
-    // ... (El código de showScreen es el mismo, asegura que se muestre gamePlayScreen) ...
+    // Ocultar todas las secciones principales
     authScreen.style.display = 'none';
     setupScreen.style.display = 'none';
     lobbyScreen.style.display = 'none';
     customLobbyScreen.style.display = 'none'; 
     gamePlayScreen.style.display = 'none'; 
-    document.getElementById('game-play-screen').style.display = 'none'; // Aseguramos que se oculte por ID
+    document.getElementById('game-play-screen').style.display = 'none'; 
 
     const userIsAuthenticated = !!auth.currentUser;
     document.getElementById('btn-jugar').style.display = 'none';
@@ -125,6 +122,12 @@ function showScreen(screen) {
         setupScreen.style.display = 'block';
     } else if (screen === 'lobby') {
         lobbyScreen.style.display = 'block';
+        
+        // 🚨 CORRECCIÓN ADSENSE: Forzar la carga de anuncios solo cuando el contenedor es visible
+        if (window.adsbygoogle) {
+             (window.adsbygoogle = window.adsbygoogle || []).push({});
+        }
+
     } else if (screen === 'custom-lobby') { 
         customLobbyScreen.style.display = 'block';
     } else if (screen === 'game') {
@@ -132,10 +135,330 @@ function showScreen(screen) {
     }
 }
 
-// --- 5, 6 y 7. AUTENTICACIÓN, PERFIL Y SALAS (MISMO CÓDIGO) ---
-// (No se repiten las secciones de autenticación, perfil, host y join para ahorrar espacio, asume que son las mismas)
 
-// --- LÓGICA ESPECÍFICA DE INICIO DE JUEGO ---
+// --- 5. GESTIÓN DE LA AUTENTICACIÓN (MISMO CÓDIGO) ---
+
+btnGoogleSignIn.addEventListener('click', () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider)
+        .catch((error) => {
+            // Este error puede ser un problema de dominio no autorizado en Firebase Auth
+            console.error("Error al iniciar sesión con Google:", error.message);
+            alert(`Error de autenticación. Verifica la consola de Firebase: ${error.message}`);
+        });
+});
+
+auth.onAuthStateChanged(async (user) => {
+    if (user) {
+        const userDocRef = db.collection('users').doc(user.uid);
+        const userDoc = await userDocRef.get();
+
+        if (userDoc.exists) {
+            showScreen('lobby');
+            lobbyNickname.textContent = userDoc.data().nickname;
+        } else {
+            showScreen('setup');
+        }
+
+    } else {
+        showScreen('auth');
+    }
+});
+
+
+// --- 6. GESTIÓN DE PERFIL (MISMO CÓDIGO) ---
+
+[inputNickname, inputNombreFijo].forEach(input => {
+    input.addEventListener('input', () => {
+        btnGuardarPerfil.disabled = !(inputNickname.value.trim() && inputNombreFijo.value.trim());
+    });
+});
+
+btnGuardarPerfil.addEventListener('click', async () => {
+    const user = auth.currentUser;
+    if (!user) return; 
+
+    const nickname = inputNickname.value.trim();
+    const nombreFijo = inputNombreFijo.value.trim().toLowerCase();
+
+    btnGuardarPerfil.disabled = true;
+    nombreFijoError.style.display = 'none';
+    nombreFijoError.textContent = '';
+
+    if (nombreFijo.includes(' ') || nombreFijo.length < 3) {
+        nombreFijoError.textContent = "El Nombre Fijo no puede tener espacios y debe tener al menos 3 caracteres.";
+        nombreFijoError.style.display = 'block';
+        btnGuardarPerfil.disabled = false;
+        return;
+    }
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const nombreFijoDocRef = db.collection('nombres_fijos_registrados').doc(nombreFijo);
+            const nombreFijoDoc = await transaction.get(nombreFijoDocRef);
+
+            if (nombreFijoDoc.exists) {
+                throw new Error("Nombre Fijo ya en uso.");
+            }
+
+            transaction.set(nombreFijoDocRef, { uid: user.uid });
+            
+            const userDocRef = db.collection('users').doc(user.uid);
+            transaction.set(userDocRef, {
+                uid: user.uid,
+                email: user.email,
+                nickname: nickname,
+                nombreFijo: nombreFijo,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                stats: {
+                    victoriasImpostor: 0,
+                    victoriasCivil: 0,
+                    puntosExperiencia: 0
+                }
+            });
+        });
+
+        alert("¡Perfil creado exitosamente! Bienvenido.");
+        showScreen('lobby');
+        lobbyNickname.textContent = nickname;
+
+    } catch (error) {
+        console.error("Error en la creación del perfil:", error);
+        
+        if (error.message && error.message.includes("Nombre Fijo ya en uso.")) {
+            nombreFijoError.textContent = "Ese Nombre Fijo ya está registrado. Intenta con otro.";
+        } else {
+            nombreFijoError.textContent = "Ocurrió un error al guardar. Intenta de nuevo.";
+        }
+        nombreFijoError.style.display = 'block';
+        btnGuardarPerfil.disabled = false;
+    }
+});
+
+
+// --- 7. LÓGICA DE SALAS MULTIJUGADOR (HOST Y JOIN) (MISMO CÓDIGO) ---
+
+function generateRoomCode() {
+    return Math.floor(1000000 + Math.random() * 9000000).toString();
+}
+
+btnHost.addEventListener('click', async () => {
+    const user = auth.currentUser;
+    if (!user) return alert("Debes iniciar sesión.");
+
+    const code = generateRoomCode();
+    
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const hostData = userDoc.data();
+
+    const roomData = {
+        code: code,
+        hostId: user.uid,
+        hostName: hostData.nickname,
+        status: 'waiting', 
+        players: {
+            [user.uid]: { 
+                nickname: hostData.nickname,
+                role: null, 
+                word: null, 
+                status: 'ready',
+                voted: false,
+                strikes: 0,
+                isEliminated: false
+            }
+        },
+        maxPlayers: 30, 
+        roundCount: 0, 
+        currentRound: 0,
+        currentTurnUID: user.uid, 
+        currentWord: null, 
+        currentImpostorWord: null, 
+        createdAt: firebase.database.ServerValue.TIMESTAMP
+    };
+
+    try {
+        await rtdb.ref(`rooms/${code}`).set(roomData);
+        alert(`Partida creada. Código: ${code}. ¡Compártelo!`);
+        currentRoomCode = code;
+        enterLobbyScreen(code, true);
+
+    } catch (error) {
+        console.error("Error al crear la sala:", error);
+        alert("Error al crear la sala. Intenta de nuevo.");
+    }
+});
+
+btnJoin.addEventListener('click', () => {
+    const user = auth.currentUser;
+    if (!user) return alert("Debes iniciar sesión.");
+
+    const code = prompt("Introduce el código de 7 dígitos de la sala:");
+    if (!code || code.length !== 7 || isNaN(code)) return alert("Código inválido. Debe ser de 7 números.");
+
+    joinRoom(code, user);
+});
+
+async function joinRoom(code, user) {
+    const roomRef = rtdb.ref(`rooms/${code}`);
+    const roomSnapshot = await roomRef.once('value');
+
+    if (!roomSnapshot.exists()) {
+        return alert("Error: La sala con ese código no existe.");
+    }
+    
+    const roomData = roomSnapshot.val();
+    const playersCount = Object.keys(roomData.players || {}).length;
+
+    if (roomData.status !== 'waiting') {
+        if (roomData.players && roomData.players[user.uid] && roomData.status === 'in_game') {
+             currentRoomCode = code;
+             enterGameScreen(code);
+             return;
+        }
+        return alert("Error: La partida ya ha comenzado o ha terminado.");
+    }
+
+    if (playersCount >= roomData.maxPlayers) {
+        return alert("Error: La sala está llena.");
+    }
+
+    if (roomData.players && roomData.players[user.uid]) {
+         currentRoomCode = code;
+         enterLobbyScreen(code, roomData.hostId === user.uid);
+         return;
+    }
+
+
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const playerData = userDoc.data();
+
+    const playerUpdate = {
+        nickname: playerData.nickname,
+        role: null,
+        word: null,
+        status: 'ready',
+        voted: false,
+        strikes: 0,
+        isEliminated: false
+    };
+
+    try {
+        await roomRef.child(`players/${user.uid}`).set(playerUpdate);
+        alert(`Te has unido a la sala ${code}.`);
+        currentRoomCode = code;
+        enterLobbyScreen(code, false);
+
+    } catch (error) {
+        console.error("Error al unirse a la sala:", error);
+        alert("Error al unirse a la sala.");
+    }
+}
+
+
+// --- 8. GESTIÓN DE SALA DE ESPERA Y START GAME (MISMO CÓDIGO) ---
+
+function enterLobbyScreen(code, isHost) {
+    showScreen('custom-lobby');
+    customLobbyScreen.innerHTML = `
+        <h2 style="color: #4a69bd;">Sala ${code}</h2>
+        <p>Esperando jugadores... (Jugadores: <span id="player-count">1</span>)</p>
+        <p>Eres el **${isHost ? '👑 HOST' : '🔗 INVITADO'}**</p>
+
+        <div id="player-list-container">
+            <ul id="player-list" style="list-style: none; padding: 0;"></ul>
+        </div>
+
+        <div style="margin-top: 30px;">
+            ${isHost ? '<button id="btn-start-game" style="background-color: #27ae60;">INICIAR JUEGO (Mínimo 4)</button>' : ''}
+            <button id="btn-leave-lobby" style="background-color: #e74c3c;">❌ Salir de Sala</button>
+        </div>
+        <p style="margin-top: 20px;">**NOTA:** El Host (anfitrión) debe permanecer en la sala para que no se cierre.</p>
+    `;
+    
+    setupRoomListeners(code, isHost);
+}
+
+function setupRoomListeners(code, isHost) {
+    const roomRef = rtdb.ref(`rooms/${code}`);
+    
+    roomRef.on('value', (snapshot) => {
+        const roomData = snapshot.val();
+        
+        if (!roomData) {
+             roomRef.off();
+             if (customLobbyScreen.style.display === 'block' || gamePlayScreen.style.display === 'block') {
+                 alert("La partida ha sido cerrada por el Host.");
+                 showScreen('lobby');
+             }
+             return;
+        }
+
+        if (roomData.status === 'in_game' && customLobbyScreen.style.display === 'block') {
+             enterGameScreen(code);
+             return;
+        }
+
+
+        const playersData = roomData.players;
+        const playerListElement = document.getElementById('player-list');
+        const playerCountElement = document.getElementById('player-count');
+
+        if (!playerListElement || !playersData) return;
+
+        let html = '';
+        const playerUIDs = Object.keys(playersData);
+        const count = playerUIDs.length;
+        
+        playerUIDs.forEach(uid => {
+            const player = playersData[uid];
+            const isPlayerHost = uid === roomData.hostId;
+            html += `<li style="text-align: left; padding: 5px; border-bottom: 1px solid #313a5a;">
+                        ${isPlayerHost ? '👑' : ''} ${player.nickname} 
+                        (${uid === auth.currentUser.uid ? 'Tú' : 'Listo'})
+                    </li>`;
+        });
+        
+        playerCountElement.textContent = count;
+        playerListElement.innerHTML = html;
+        
+        const btnStart = document.getElementById('btn-start-game');
+        if (isHost && btnStart) {
+            btnStart.disabled = (count < 4); 
+            if (count >= 4) {
+                 btnStart.textContent = `INICIAR JUEGO (${count} jugadores)`;
+            } else {
+                 btnStart.textContent = `INICIAR JUEGO (Mínimo 4)`;
+            }
+        }
+    });
+
+    const btnLeaveLobby = document.getElementById('btn-leave-lobby');
+    if (btnLeaveLobby) {
+        btnLeaveLobby.onclick = async () => {
+            const currentUserUID = auth.currentUser.uid;
+            
+            await roomRef.child(`players/${currentUserUID}`).remove();
+            
+            roomRef.off(); 
+            currentRoomCode = null;
+
+            if (isHost) {
+                 alert("¡El Host se fue! Cerrando la partida para todos...");
+                 await roomRef.remove(); 
+            } else {
+                 alert("Has salido de la sala.");
+            }
+            showScreen('lobby');
+        };
+    }
+    
+    if (isHost) {
+        const btnStart = document.getElementById('btn-start-game');
+        if (btnStart) {
+            btnStart.onclick = () => startGame(code);
+        }
+    }
+}
 
 async function startGame(code) {
     const roomRef = rtdb.ref(`rooms/${code}`);
@@ -155,7 +478,6 @@ async function startGame(code) {
         const { updatedPlayers, civilWord, impostorWord } = assignRoles(playersData);
         const playerUIDs = Object.keys(updatedPlayers);
         
-        // 1. Encontrar el primer jugador activo (no eliminado)
         const activePlayersUIDs = playerUIDs.filter(uid => !updatedPlayers[uid].isEliminated);
         const firstTurnUID = activePlayersUIDs[Math.floor(Math.random() * activePlayersUIDs.length)]; 
 
@@ -167,12 +489,11 @@ async function startGame(code) {
             players: updatedPlayers,
             roundCount: activePlayersUIDs.length, 
             currentRound: 1,
-            voting: { // NUEVO: Objeto para la votación
+            voting: { 
                 status: 'discussion', // discussion, voting, results
                 votes: {},
                 accusedUID: null
             },
-            // Usamos un timestamp de inicio de turno para el cálculo del temporizador
             turnStartTime: firebase.database.ServerValue.TIMESTAMP 
         };
 
@@ -186,19 +507,17 @@ async function startGame(code) {
 }
 
 
-// --- 8. LÓGICA DE TURNO Y VOTACIÓN (Fase 4) ---
+// --- 9. LÓGICA DE TURNO Y VOTACIÓN (FASE 4) ---
 
-// Función para encontrar el siguiente jugador en el círculo
 function getNextTurnUID(players, currentUID) {
-    const uids = Object.keys(players).sort(); // Ordenar alfabéticamente por UID
+    const uids = Object.keys(players).sort(); 
     let currentIndex = uids.indexOf(currentUID);
     let nextIndex = (currentIndex + 1) % uids.length;
+    let originalIndex = currentIndex;
 
-    // Buscar el siguiente jugador activo (que no esté eliminado)
     while (players[uids[nextIndex]].isEliminated) {
         nextIndex = (nextIndex + 1) % uids.length;
-        if (nextIndex === currentIndex) {
-            // Caso borde: Solo queda un jugador (el impostor o el civil)
+        if (nextIndex === originalIndex) {
             return null; 
         }
     }
@@ -211,7 +530,6 @@ async function handleEndTurn(code, currentTurnUID) {
     await rtdb.runTransaction(roomSnapshot => {
         const roomData = roomSnapshot.val();
         if (!roomData || roomData.currentTurnUID !== currentTurnUID) {
-            // Alguien más ya cambió el turno
             return;
         }
 
@@ -219,17 +537,13 @@ async function handleEndTurn(code, currentTurnUID) {
         const nextUID = getNextTurnUID(players, currentTurnUID);
 
         if (!nextUID) {
-             // Juego terminado (Solo queda uno)
              roomData.status = 'finished';
-             // Lógica para determinar si el último es el impostor o el civil
         } else {
-            // Cambiar turno
             roomData.currentTurnUID = nextUID;
             roomData.turnStartTime = firebase.database.ServerValue.TIMESTAMP;
             
-            // Verificar si la ronda ha terminado
             const playerUIDs = Object.keys(players).sort();
-            if (nextUID === playerUIDs[0]) { // Asumimos que el primer UID en el array ordenado inicia la ronda
+            if (nextUID === playerUIDs[0]) { 
                  roomData.currentRound += 1;
             }
         }
@@ -238,7 +552,6 @@ async function handleEndTurn(code, currentTurnUID) {
     });
 }
 
-// Función para manejar el Strike (tiempo agotado o acción incorrecta)
 async function handleStrike(code, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
@@ -250,48 +563,40 @@ async function handleStrike(code, targetUID) {
         if (player) {
             player.strikes = (player.strikes || 0) + 1;
             
-            // Si tiene 2 strikes, es eliminado (regla de 2 strikes)
             if (player.strikes >= 2) {
                 player.isEliminated = true;
                 player.status = 'eliminated';
                 alert(`${player.nickname} ha sido eliminado por acumular 2 strikes!`);
-                // Lógica para comprobar fin de juego
             }
         }
         return roomData;
     });
 }
 
-// ------------------------------------------
-// LÓGICA DE VOTACIÓN
-// ------------------------------------------
-
-// Iniciar la votación (disparada por btn-start-vote)
 async function startVotingPhase(code, accusedUID = null) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
     await roomRef.child('voting').update({
         status: 'voting',
-        votes: {}, // Limpiar votos anteriores
-        accusedUID: accusedUID, // Si hay un acusado específico (ej: por Strike)
+        votes: {}, 
+        accusedUID: accusedUID, 
         startTime: firebase.database.ServerValue.TIMESTAMP
     });
     alert("¡Votación iniciada! Elijan un jugador.");
 }
 
-// Registrar un voto
 async function registerVote(code, voterUID, targetUID) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     
-    // El voto se registra en /rooms/{code}/voting/votes/{targetUID}/{voterUID}: true
     await roomRef.child(`voting/votes/${targetUID}/${voterUID}`).set(true);
 
-    alert(`Tu voto por ${targetUID} ha sido registrado.`);
-    // La función principal del listener manejará el fin de la votación
+    // Lógica para comprobar si todos han votado y finalizar la fase de votación
+    // Esto se haría en un Cloud Function o en un listener más complejo, pero por ahora solo registraremos
+    alert(`Tu voto por ${roomData.players[targetUID].nickname} ha sido registrado.`); 
 }
 
 
-// --- 9. GESTIÓN DE PANTALLA DE JUEGO (Actualizada) ---
+// --- 10. GESTIÓN DE PANTALLA DE JUEGO (Actualizada) ---
 
 function enterGameScreen(code) {
     showScreen('game');
@@ -299,19 +604,16 @@ function enterGameScreen(code) {
     const roomRef = rtdb.ref(`rooms/${code}`);
     const currentUserUID = auth.currentUser.uid;
     
-    // Detener cualquier temporizador previo
     if (gameTimerInterval) clearInterval(gameTimerInterval);
     
-    // 1. EVENT LISTENERS PARA LA INTERFAZ DE JUEGO
     btnEndTurn.onclick = () => handleEndTurn(code, currentUserUID);
-    btnStartVote.onclick = () => startVotingPhase(code); // Iniciar votación general
+    btnStartVote.onclick = () => startVotingPhase(code); 
 
-    // 2. LISTENER PRINCIPAL DE LA SALA
     roomRef.on('value', (snapshot) => {
         const roomData = snapshot.val();
         if (!roomData || roomData.status !== 'in_game') {
             roomRef.off();
-            if (roomData.status === 'finished') alert("Juego terminado.");
+            if (roomData && roomData.status === 'finished') alert("Juego terminado.");
             showScreen('lobby');
             return;
         }
@@ -319,28 +621,23 @@ function enterGameScreen(code) {
         const myPlayer = roomData.players[currentUserUID];
         const isMyTurn = roomData.currentTurnUID === currentUserUID;
 
-        // A. Actualizar Rol, Palabra y Ronda
         roleDisplay.textContent = `TU ROL: ${myPlayer.role.toUpperCase()}`;
         wordDisplay.textContent = `PALABRA: ${myPlayer.word}`;
         roleDisplay.style.color = myPlayer.role === 'impostor' ? '#e74c3c' : '#27ae60';
         wordDisplay.style.color = myPlayer.role === 'impostor' ? '#e74c3c' : '#27ae60';
         roundDisplay.textContent = roomData.currentRound;
 
-        // B. Gestión de Turno y Temporizador
         const turnPlayer = roomData.players[roomData.currentTurnUID];
         currentTurnPlayer.textContent = turnPlayer ? turnPlayer.nickname : 'N/A';
         btnEndTurn.style.display = isMyTurn && roomData.voting.status === 'discussion' ? 'inline-block' : 'none';
         
-        // Iniciar el temporizador visual
         startLocalTimer(roomData, currentUserUID);
         
-        // C. Gestión de la Votación
         renderVotingArea(roomData, currentUserUID);
         
-        // D. Renderizar lista de jugadores (estado, strikes, etc.)
         renderGamePlayerList(roomData);
         
-        // E. (PRÓXIMO PASO: Comprobar Ganador)
+        // (FASE 5: Comprobar Ganador se implementará aquí)
     });
 }
 
@@ -355,9 +652,8 @@ function startLocalTimer(roomData, currentUserUID) {
         return;
     }
 
-    // Calcular tiempo restante basado en el timestamp de inicio (más preciso que un contador local)
-    const turnStartTime = roomData.turnStartTime || firebase.database.ServerValue.TIMESTAMP;
-    const maxTime = 60; // segundos
+    const turnStartTime = roomData.turnStartTime || Date.now();
+    const maxTime = 60; 
     
     gameTimerInterval = setInterval(async () => {
         const serverTimeMs = Date.now(); 
@@ -367,9 +663,12 @@ function startLocalTimer(roomData, currentUserUID) {
         if (timeLeft <= 0) {
             clearInterval(gameTimerInterval);
             timerDisplay.textContent = "¡TIEMPO AGOTADO!";
-            // Aplica strike y pasa al siguiente turno (solo el jugador en turno lo hace)
-            handleStrike(currentRoomCode, currentUserUID);
-            handleEndTurn(currentRoomCode, currentUserUID);
+            
+            // Solo el jugador en turno debe aplicar el strike
+            if (roomData.currentTurnUID === currentUserUID) {
+                await handleStrike(currentRoomCode, currentUserUID);
+                await handleEndTurn(currentRoomCode, currentUserUID);
+            }
         } else {
             timerDisplay.textContent = timeLeft;
         }
@@ -411,7 +710,6 @@ function renderVotingArea(roomData, currentUserUID) {
     if (isVoting) {
         const players = roomData.players;
         
-        // Contar votos ya emitidos por el jugador
         let hasVoted = false;
         Object.keys(roomData.voting.votes || {}).forEach(targetUID => {
             if (roomData.voting.votes[targetUID] && roomData.voting.votes[targetUID][currentUserUID]) {
@@ -424,7 +722,6 @@ function renderVotingArea(roomData, currentUserUID) {
              return;
         }
         
-        // Mostrar lista de jugadores vivos para votar
         Object.keys(players).forEach(targetUID => {
             const p = players[targetUID];
             if (!p.isEliminated && targetUID !== currentUserUID) {
